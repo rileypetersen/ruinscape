@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- No title element -->
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    label { display: inline-block; width: 320px; }
+    input[type="text"] { width: 100px; }
+    .inputRow { margin-bottom: 10px; }
+    #results { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    .error { color: red; font-weight: bold; }
+    .notice { color: blue; font-weight: bold; }
+    .flexRow { display: flex; align-items: center; }
+    .flexRow > div { margin-right: 20px; }
+    table { border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+    table, th, td { border: 1px solid black; }
+    th, td { padding: 5px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h2>Ruinscape – Escape Ruin (Optimized IOL with Balance on Win)</h2>
+  
+  <fieldset>
+    <legend>Base Parameters</legend>
+    <div class="inputRow">
+      <label for="B">Bankroll (B):</label>
+      <input type="text" id="B" value="85">
+    </div>
+    <!-- Minimum bet is fixed at 0.01 -->
+    <div class="inputRow">
+      <label for="p_win_slider">Win Probability Slider (%):</label>
+      <input type="range" id="p_win_slider" min="2" max="98" value="49.5" step="0.1" oninput="sliderChanged()">
+      <span id="p_win_slider_val">49.5%</span>
+    </div>
+    <div class="inputRow flexRow">
+      <div>
+        <label for="p_win">Win Probability (p_win, in %):</label>
+        <input type="text" id="p_win" value="49.5">
+      </div>
+      <div>
+        <label for="r">Game Payout Multiplier (r):</label>
+        <!-- Displays r_game = 99 / p_win -->
+        <input type="text" id="r" value="2">
+      </div>
+    </div>
+    <!-- Moved Minimum Increase % on Loss into Base Parameters -->
+    <div class="inputRow">
+      <label for="minIncrease">Minimum Increase % on Loss:</label>
+      <input type="text" id="minIncrease" value="0.01">
+      <input type="checkbox" id="lock_minIncrease"><span class="locked"> Lock</span>
+    </div>
+    <div class="inputRow">
+      <label for="rpr">Ruin Probability Requirement (RPR):</label>
+      <input type="text" id="rpr" value="0.001000%">
+      <span>(e.g., enter 0.001000% for 0.001%)</span>
+    </div>
+  </fieldset>
+  
+  <hr>
+  
+  <fieldset>
+    <legend>Computed/Locked Parameters</legend>
+    <div class="inputRow">
+      <label for="L">Maximum Series Length (L):</label>
+      <input type="text" id="L" value="">
+      <input type="checkbox" id="lockL"><span class="locked"> Lock</span>
+    </div>
+    <div class="inputRow">
+      <label for="S">Starting Bet (S):</label>
+      <input type="text" id="S" value="">
+      <input type="checkbox" id="lockS"><span class="locked"> Lock</span>
+    </div>
+    <div class="inputRow">
+      <label for="N">Waiting Trigger (N):</label>
+      <input type="text" id="N" value="">
+      <input type="checkbox" id="lockN"><span class="locked"> Lock</span>
+    </div>
+  </fieldset>
+  
+  <button onclick="calculate()">Calculate</button>
+  
+  <div id="results"></div>
+  
+  <script>
+    // On page load, update dynamic fields.
+    document.addEventListener("DOMContentLoaded", function() {
+      sliderChanged();
+    });
+    
+    // Update p_win and game payout multiplier when slider moves.
+    function sliderChanged() {
+      let slider = document.getElementById("p_win_slider");
+      let new_pwin = parseFloat(slider.value);
+      document.getElementById("p_win_slider_val").textContent = new_pwin.toFixed(1) + "%";
+      document.getElementById("p_win").value = new_pwin.toFixed(1);
+      let r_game = 99 / new_pwin;
+      document.getElementById("r").value = r_game.toFixed(2);
+      
+      // Dynamically update minIncrease if not locked:
+      if (!document.getElementById("lock_minIncrease").checked) {
+        // Minimum IOL% needed = 100/(r_game - 1)
+        let computedMinIncrease = 100 / (r_game - 1);
+        document.getElementById("minIncrease").value = computedMinIncrease.toFixed(2);
+      }
+    }
+    
+    // When p_win is manually changed.
+    document.getElementById("p_win").addEventListener("input", function() {
+      let new_pwin = parseFloat(this.value);
+      if (!isNaN(new_pwin) && new_pwin > 0) {
+        document.getElementById("p_win_slider").value = new_pwin;
+        document.getElementById("p_win_slider_val").textContent = new_pwin.toFixed(1) + "%";
+        let r_game = 99 / new_pwin;
+        document.getElementById("r").value = r_game.toFixed(2);
+        if (!document.getElementById("lock_minIncrease").checked) {
+          let computedMinIncrease = 100 / (r_game - 1);
+          document.getElementById("minIncrease").value = computedMinIncrease.toFixed(2);
+        }
+      }
+    });
+    
+    // When r is manually changed.
+    document.getElementById("r").addEventListener("input", function() {
+      let new_r = parseFloat(this.value);
+      if (!isNaN(new_r) && new_r > 0) {
+        let new_pwin = 99 / new_r;
+        document.getElementById("p_win").value = new_pwin.toFixed(1);
+        document.getElementById("p_win_slider").value = new_pwin;
+        document.getElementById("p_win_slider_val").textContent = new_pwin.toFixed(1) + "%";
+        if (!document.getElementById("lock_minIncrease").checked) {
+          let computedMinIncrease = 100 / (new_r - 1);
+          document.getElementById("minIncrease").value = computedMinIncrease.toFixed(2);
+        }
+      }
+    });
+    
+    // For RPR input, show "%" on blur.
+    const rprInput = document.getElementById("rpr");
+    rprInput.addEventListener("focus", function() {
+      this.value = this.value.replace("%", "");
+    });
+    rprInput.addEventListener("blur", function() {
+      let num = parseFloat(this.value);
+      if (!isNaN(num)) {
+        this.value = num.toFixed(6) + "%";
+      }
+    });
+    
+    // Main calculation.
+    function calculate() {
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "";
+      
+      // Base inputs.
+      let B = parseFloat(document.getElementById("B").value);
+      let S_min = 0.01;
+      let p_win = parseFloat(document.getElementById("p_win").value);
+      let p_win_frac = p_win / 100;
+      let p_loss = 1 - p_win_frac;
+      
+      let rprRaw = document.getElementById("rpr").value.replace("%", "");
+      let rpr = parseFloat(rprRaw) / 100;
+      
+      // Game payout multiplier.
+      let r_game = 99 / p_win;
+      
+      // Get minIncrease.
+      let minIncrease = parseFloat(document.getElementById("minIncrease").value);
+      if (isNaN(minIncrease)) {
+        resultsDiv.innerHTML = "<p class='error'>Minimum Increase % must be a number.</p>";
+        return;
+      }
+      // Check if the entered minIncrease meets the minimum required for a net gain.
+      // Minimum required is computed as 100/(r_game - 1), where r_game is the game payout multiplier.
+      let computedMinIncrease = 100 / (r_game - 1);
+      if (minIncrease < computedMinIncrease) {
+        let minIncreaseInput = document.getElementById("minIncrease");
+        let errorEl = document.getElementById("minIncrease_error");
+        if (!errorEl) {
+          errorEl = document.createElement("span");
+          errorEl.id = "minIncrease_error";
+          errorEl.style.color = "red";
+          errorEl.style.fontSize = "12px";
+          minIncreaseInput.parentNode.insertBefore(errorEl, minIncreaseInput.nextSibling);
+        }
+        errorEl.textContent = "Minimum increase % for net gain is " + computedMinIncrease.toFixed(2);
+        resultsDiv.innerHTML = "";
+        return;
+      } else {
+        let errorEl = document.getElementById("minIncrease_error");
+        if (errorEl) errorEl.remove();
+      }
+      let r_min = 1 + (minIncrease / 100);
+      
+      // Optimization: To maximize series length L, set S = S_min.
+      // Maximum series length from bankroll with escalation multiplier = r_min:
+      let L_B = Math.floor(Math.log(B / S_min + 1) / Math.log(r_min));
+      
+      // Determine waiting trigger N based on ruin probability requirement.
+      // Total rounds required (T_required) to meet RPR: (p_loss)^(T_required) <= RPR
+      let T_required = Math.ceil(Math.log(rpr) / Math.log(p_loss));
+      // Set waiting rounds (N) as the difference between T_required and the maximum betting rounds (L_B).
+      let desired_N = T_required - L_B;
+      if (desired_N < 0) { desired_N = 0; }
+      let N = desired_N;
+      document.getElementById("N").value = N;
+      
+      // Now choose L = L_B (maximum series length possible with S = S_min and escalation = r_min).
+      let L_opt = L_B;
+      
+      // To maximize IOL% while keeping L constant, choose:
+      let r_opt = Math.exp(Math.log(B / S_min + 1) / L_opt);
+      r_opt = Math.max(r_opt, r_min);
+      
+      let L = L_opt;
+      let S = B / (Math.pow(r_opt, L) - 1);
+      
+      let overallRuinProb = Math.pow(p_loss, N + L);
+      let S_rounded = parseFloat(S.toFixed(2));
+      let overallRuinPercent = (overallRuinProb * 100).toFixed(6) + "%";
+      let likelihood = Math.round(1 / overallRuinProb);
+      
+      let effectiveIOL = ((r_opt - 1) * 100).toFixed(2) + "%";
+      
+      let html = "<h3>Results</h3>";
+      html += "<p>Bankroll (B): " + B + "</p>";
+      html += "<p>Minimum Bet (Sₘᵢₙ): " + S_min + "</p>";
+      html += "<p>Win Probability (p_win): " + p_win.toFixed(1) + "%</p>";
+      html += "<p>Game Payout Multiplier (r_game): " + r_game.toFixed(2) + "</p>";
+      html += "<p>Ruin Probability Requirement (RPR): " + (rpr * 100).toFixed(6) + "%</p>";
+      html += "<p>Minimum Increase % on Loss (Dynamic): " + minIncrease.toFixed(2) + "% (i.e. escalation multiplier ≥ " + r_min.toFixed(4) + ")</p>";
+      html += "<hr>";
+      html += "<p>Calculated Maximum Series Length (L): <strong>" + L + "</strong></p>";
+      html += "<p>Calculated Starting Bet (S): <strong>" + S_rounded.toFixed(2) + "</strong></p>";
+      html += "<p>Calculated Waiting Trigger (N): <strong>" + N + "</strong></p>";
+      html += "<p>Effective Escalation Multiplier (IOL): <strong>" + r_opt.toFixed(4) + "</strong> (" + effectiveIOL + ")</p>";
+      html += "<p>Resulting Overall Ruin Probability: <strong>" + overallRuinPercent + "</strong></p>";
+      html += "<p>Likelihood of ruin: 1/" + likelihood + "</p>";
+      
+      html += "<p>Given the provided constraints, your game parameters should include:</p>";
+      html += "<ul>";
+      html += "<li>a base bet of 0</li>";
+      html += "<li>a delay of " + N + " consecutive losses before betting</li>";
+      html += "<li>a starting bet of " + S_rounded.toFixed(2) + "</li>";
+      html += "<li>an increase on loss of " + effectiveIOL + "</li>";
+      html += "</ul>";
+      html += "<p>With these parameters, the chances of losing are 1/" + likelihood + "</p>";
+      
+      // Build simulation table with new column "Balance on Win"
+      let totalRows = N + L;
+      html += "<h3>Simulated Loss Sequence (Including Waiting Rounds)</h3>";
+      html += "<table><tr>";
+      html += "<th>Overall Loss #</th>";
+      html += "<th>Bet Size</th>";
+      html += "<th>Increase on Loss %</th>";
+      html += "<th>Cumulative Bet</th>";
+      html += "<th>Cumulative Bet+</th>";
+      html += "<th>Payout on Win</th>";
+      html += "<th>Chance of W</th>";
+      html += "<th>Chance of L</th>";
+      html += "<th>Balance</th>";
+      html += "<th>Balance+</th>";
+      html += "<th>Balance on Win</th>";
+      html += "</tr>";
+      
+      let cumulativeBet = 0;
+      for (let i = 1; i <= totalRows; i++) {
+        html += "<tr>";
+        html += "<td>" + i + "</td>";
+        if (i <= N) {
+          // Waiting rounds.
+          html += "<td>0.00</td>";         // Bet Size
+          html += "<td>N/A</td>";          // Increase on Loss %
+          html += "<td>0.00</td>";         // Cumulative Bet
+          html += "<td>" + S_rounded.toFixed(2) + "</td>";  // Cumulative Bet+ = S
+          html += "<td>" + (S_rounded * r_game).toFixed(2) + "</td>"; // Payout on Win using r_game
+          html += "<td>N/A</td>";          // Chance of W
+          html += "<td>N/A</td>";          // Chance of L
+          html += "<td>" + B.toFixed(2) + "</td>";  // Balance remains B
+          html += "<td>" + (B - S_rounded).toFixed(2) + "</td>"; // Balance+ = B - S
+          html += "<td>N/A</td>";          // Balance on Win not applicable (no bet yet)
+        } else {
+          let j = i - N;
+          let betSize = S_rounded * Math.pow(r_opt, j - 1);
+          let betSizeRounded = betSize.toFixed(2);
+          cumulativeBet += betSize;
+          let cumulativeRounded = cumulativeBet.toFixed(2);
+          let nextBet = S_rounded * Math.pow(r_opt, j);
+          let cumulativeBetPlus = cumulativeBet + nextBet;
+          let cumulativeBetPlusRounded = cumulativeBetPlus.toFixed(2);
+          let payout = S_rounded * Math.pow(r_opt, j);
+          let payoutRounded = payout.toFixed(2);
+          let likelihoodWin = Math.pow(p_loss, j - 1) * p_win_frac * 100;
+          let likelihoodWinRounded = likelihoodWin.toFixed(6) + "%";
+          let chanceLoss = Math.pow(p_loss, j) * 100;
+          let chanceLossRounded = chanceLoss.toFixed(6) + "%";
+          let balance = B - cumulativeBet;
+          let balanceRounded = balance.toFixed(2);
+          let balancePlus = B - (cumulativeBet + nextBet);
+          let balancePlusRounded = balancePlus.toFixed(2);
+          // Balance on Win = current balance plus net win if you win this round.
+          // Net win = payout - (cumulativeBet) i.e., win this round's payout and recover all previous bets.
+          let balanceOnWin = B - cumulativeBet + payout;
+          let balanceOnWinRounded = balanceOnWin.toFixed(2);
+          
+          html += "<td>" + betSizeRounded + "</td>";
+          html += "<td>" + effectiveIOL + "</td>";
+          html += "<td>" + cumulativeRounded + "</td>";
+          html += "<td>" + cumulativeBetPlusRounded + "</td>";
+          html += "<td>" + payoutRounded + "</td>";
+          html += "<td>" + likelihoodWinRounded + "</td>";
+          html += "<td>" + chanceLossRounded + "</td>";
+          html += "<td>" + balanceRounded + "</td>";
+          html += "<td>" + balancePlusRounded + "</td>";
+          html += "<td>" + balanceOnWinRounded + "</td>";
+        }
+        html += "</tr>";
+      }
+      html += "</table>";
+      
+      resultsDiv.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
