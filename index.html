@@ -26,6 +26,7 @@
     <div class="inputRow">
       <label for="B">Bankroll (B):</label>
       <input type="text" id="B" value="85">
+      <input type="checkbox" id="gc"><label for="gc" style="margin-left: 5px;">GC</label>
     </div>
     <!-- Minimum bet is fixed at 0.01 -->
     <div class="inputRow">
@@ -154,7 +155,7 @@
       
       // Base inputs.
       let B = parseFloat(document.getElementById("B").value);
-      let S_min = 0.01;
+      let S_min = document.getElementById("gc").checked ? 1.00 : 0.01;
       let p_win = parseFloat(document.getElementById("p_win").value);
       let p_win_frac = p_win / 100;
       let p_loss = 1 - p_win_frac;
@@ -238,14 +239,12 @@
       html += "<p>Resulting Overall Ruin Probability: <strong>" + overallRuinPercent + "</strong></p>";
       html += "<p>Likelihood of ruin: 1/" + likelihood + "</p>";
       
-      html += "<p>Given the provided constraints, your game parameters should include:</p>";
-      html += "<ul>";
-      html += "<li>a base bet of 0</li>";
-      html += "<li>a delay of " + N + " consecutive losses before betting</li>";
-      html += "<li>a starting bet of " + S_rounded.toFixed(2) + "</li>";
-      html += "<li>an increase on loss of " + effectiveIOL + "</li>";
-      html += "</ul>";
       html += "<p>With these parameters, the chances of losing are 1/" + likelihood + "</p>";
+      html += "<details><summary>How to set up</summary>";
+      html += "<p>Condition 1: Streak greater than " + N + " losses, increase amount " + effectiveIOL + "</p>";
+      html += "<p>Condition 2: First streak of " + N + " losses, set amount to " + S_rounded.toFixed(2) + "</p>";
+      html += "<p>Condition 3: Every 1 Wins, reset amount</p>";
+      html += "</details>";
       
       // Build simulation table with new column "Balance on Win"
       let totalRows = N + L;
