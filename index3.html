@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ruinscape – Escape Ruin (Optimized IOL with Simulation)</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    label { display: inline-block; width: 320px; }
+    input[type="text"] { width: 100px; }
+    .inputRow { margin-bottom: 10px; }
+    fieldset { margin-bottom: 20px; }
+    #results { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    #resultSummary { margin-bottom: 20px; }
+    .error { color: red; font-weight: bold; }
+    .notice { color: blue; font-weight: bold; }
+    .flexRow { display: flex; align-items: center; }
+    .flexRow > div { margin-right: 20px; }
+    table { border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+    table, th, td { border: 1px solid black; }
+    th, td { padding: 5px; text-align: center; }
+    button { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Ruinscape – Escape Ruin (Optimized IOL with Simulation)</h2>
+  
+  <!-- BASE PARAMETERS -->
+  <fieldset>
+    <legend>Base Parameters</legend>
+    <div class="inputRow">
+      <label for="B">Bankroll (B):</label>
+      <input type="text" id="B" value="85">
+      <!-- GC checkbox: if checked, minimum bet becomes 1.00 instead of 0.01 -->
+      <input type="checkbox" id="gc">
+      <label for="gc" style="margin-left: 5px;">GC</label>
+    </div>
+    <div class="inputRow">
+      <label for="p_win_slider">Win Probability Slider (%):</label>
+      <input type="range" id="p_win_slider" min="2" max="98" value="49.5" step="0.1" oninput="sliderChanged()">
+      <span id="p_win_slider_val">49.5%</span>
+    </div>
+    <div class="inputRow flexRow">
+      <div>
+        <label for="p_win">Win Probability (p_win, in %):</label>
+        <input type="text" id="p_win" value="49.5">
+      </div>
+      <div>
+        <label for="r">Game Payout Multiplier (r):</label>
+        <!-- r_game = 99 / p_win, rounded to 4 decimals -->
+        <input type="text" id="r" value="2.0000">
+      </div>
+    </div>
+    <div class="inputRow">
+      <label for="minIncrease">Minimum Increase % on Loss:</label>
+      <input type="text" id="minIncrease" value="0.01">
+      <input type="checkbox" id="lock_minIncrease">
+      <span class="locked"> Lock</span>
+    </div>
+    <div class="inputRow">
+      <label for="rpr">Ruin Probability Requirement (RPR):</label>
+      <input type="text" id="rpr" value="0.001000%">
+      <span>(e.g., enter 0.001000% for 0.001%)</span>
+    </div>
+  </fieldset>
+  
+  <hr>
+  
+  <!-- COMPUTED/LOCKED PARAMETERS -->
+  <fieldset>
+    <legend>Computed/Locked Parameters</legend>
+    <div class="inputRow">
+      <label for="L">Maximum Series Length (L):</label>
+      <input type="text" id="L" value="">
+      <input type="checkbox" id="lockL">
+      <span class="locked"> Lock</span>
+    </div>
+    <div class="inputRow">
+      <label for="S">Starting Bet (S):</label>
+      <input type="text" id="S" value="">
+      <input type="checkbox" id="lockS">
+      <span class="locked"> Lock</span>
+    </div>
+    <div class="inputRow">
+      <label for="N">Waiting Trigger (N):</label>
+      <input type="text" id="N" value="">
+      <input type="checkbox" id="lockN">
+      <span class="locked"> Lock</span>
+    </div>
+  </fieldset>
+  
+  <!-- BUTTONS -->
+  <button onclick="calculate()">Calculate</button>
+  <button onclick="simulateOptimalPwin()">Simulate</button>
+  
+  <div id="results"></div>
+  
+  <script>
+    // Helper function: round a number to a given number of decimals.
+    function roundTo(num, decimals) {
+      return Number(Math.round(num + "e" + decimals) + "e-" + decimals);
+    }
+    
+    // Toggle result summary visibility.
+    function toggleResultSummary() {
+      const summaryDiv = document.getElementById("resultSummary");
+      if (summaryDiv.style.display === "none") {
+        summaryDiv.style.display = "block";
+      } else {
+        summaryDiv.style.display = "none";
+      }
+    }
+    
+    // On page load, update dynamic fields.
+    document.addEventListener("DOMContentLoaded", function() {
+      sliderChanged();
+    });
+    
+    // When the slider moves, update p_win, game payout multiplier (r_game), and minIncrease.
+    function sliderChanged() {
+      let slider = document.getElementById("p_win_slider");
+      let new_pwin = parseFloat(slider.value);
+      document.getElementById("p_win_slider_val").textContent = new_pwin.toFixed(1) + "%";
+      document.getElementById("p_win").value = new_pwin.toFixed(1);
+      let r_game = 99 / new_pwin;
+      document.getElementById("r").value = r_game.toFixed(4);
+      if (!document.getElementById("lock_minIncrease").checked) {
+        let computedMinIncrease = 100 / (r_game - 1);
+        document.getElementById("minIncrease").value = computedMinIncrease.toFixed(2);
+      }
+    }
+    
+    document.getElementById("p_win").addEventListener("input", function() {
+      let new_pwin = parseFloat(this.value);
+      if (!isNaN(new_pwin) && new_pwin > 0) {
+        document.getElementById("p_win_slider").value = new_pwin;
+        document.getElementById("p_win_slider_val").textContent = new_pwin.toFixed(1) + "%";
+        let r_game = 99 / new_pwin;
+        document.getElementById("r").value = r_game.toFixed(4);
+        if (!document.getElementById("lock_minIncrease").checked) {
+          let computedMinIncrease = 100 / (r_game - 1);
+          document.getElementById("minIncrease").value = computedMinIncrease.toFixed(2);
+        }
+      }
+    });
+    
+    document.getElementById("r").addEventListener("input", function() {
+      let new_r = parseFloat(this.value);
+      if (!isNaN(new_r) && new_r > 0) {
+        let new_pwin = 99 / new_r;
+        document.getElementById("p_win").value = new_pwin.toFixed(1);
+        document.getElementById("p_win_slider").value = new_pwin;
+        document.getElementById("p_win_slider_val").textContent = new_pwin.toFixed(1) + "%";
+        if (!document.getElementById("lock_minIncrease").checked) {
+          let computedMinIncrease = 100 / (new_r - 1);
+          document.getElementById("minIncrease").value = computedMinIncrease.toFixed(2);
+        }
+      }
+    });
+    
+    // For RPR input: remove "%" on focus, add it back on blur.
+    const rprInput = document.getElementById("rpr");
+    rprInput.addEventListener("focus", function() {
+      this.value = this.value.replace("%", "");
+    });
+    rprInput.addEventListener("blur", function() {
+      let num = parseFloat(this.value);
+      if (!isNaN(num)) {
+        this.value = num.toFixed(6) + "%";
+      }
+    });
+    
+    // Compute parameters based on current UI values.
+    function computeParameters() {
+      let errors = [];
+      
+      let B = parseFloat(document.getElementById("B").value);
+      let S_min = document.getElementById("gc").checked ? 1.00 : 0.01;
+      let p_win = parseFloat(document.getElementById("p_win").value);
+      if (isNaN(B) || B <= 0) errors.push("Bankroll (B) must be a positive number.");
+      if (isNaN(p_win) || p_win <= 0 || p_win >= 100) errors.push("Win Probability (p_win) must be between 0 and 100.");
+      
+      let p_win_frac = p_win / 100;
+      let p_loss = 1 - p_win_frac;
+      
+      let rprRaw = document.getElementById("rpr").value.replace("%", "");
+      let rpr = parseFloat(rprRaw) / 100;
+      if (isNaN(rpr) || rpr <= 0 || rpr >= 1) errors.push("RPR must be a fraction (e.g., 0.001000%).");
+      
+      let r_game = 99 / p_win;
+      
+      let minIncrease = parseFloat(document.getElementById("minIncrease").value);
+      if (isNaN(minIncrease) || minIncrease <= 0) {
+        errors.push("Minimum Increase % on Loss must be a positive number.");
+      }
+      
+      let computedMinIncrease = 100 / (r_game - 1);
+      if (minIncrease < computedMinIncrease) {
+        minIncrease = computedMinIncrease;
+        document.getElementById("minIncrease").value = minIncrease.toFixed(2);
+      }
+      let r_min = 1 + (minIncrease / 100);
+      
+      let L_B = Math.floor(Math.log(B / S_min + 1) / Math.log(r_min));
+      
+      // For computed/locked parameters, check if N is locked.
+      let N;
+      if (document.getElementById("lockN").checked) {
+        N = parseInt(document.getElementById("N").value) || 0;
+      } else {
+        N = 0;
+        document.getElementById("N").value = N;
+      }
+      
+      let L_Ruin = Math.ceil(Math.log(rpr) / Math.log(p_loss)) - N;
+      if (L_B < L_Ruin) {
+        N = L_Ruin - L_B;
+        if (!document.getElementById("lockN").checked) {
+          document.getElementById("N").value = N;
+        }
+      }
+      
+      let L_opt = L_B;
+      let r_opt = Math.exp(Math.log(B / S_min + 1) / L_opt);
+      r_opt = Math.max(r_opt, r_min);
+      
+      let S = B / (Math.pow(r_opt, L_opt) - 1);
+      let overallRuinProb = Math.pow(p_loss, N + L_opt);
+      
+      return {
+        errors: errors,
+        B: B,
+        S_min: S_min,
+        p_win: p_win,
+        p_loss: p_loss,
+        r_game: r_game,
+        minIncrease: minIncrease,
+        r_min: r_min,
+        L: L_opt,
+        N: N,
+        r_opt: r_opt,
+        S: S,
+        overallRuinProb: overallRuinProb,
+        overallRuinPercent: overallRuinProb * 100,
+        likelihood: Math.round(1 / overallRuinProb),
+        p_win_frac: p_win_frac,
+        rpr: rpr
+      };
+    }
+    
+    // Build simulation table with tooltips.
+    function buildSimulationTable(params) {
+      let html = "<h3>Simulated Loss Sequence (Including Waiting Rounds)</h3>";
+      html += "<table><tr>";
+      html += "<th title='Sequential number of losses (including waiting rounds)'>Overall Loss #</th>";
+      html += "<th title='The bet amount placed on that round (0.00 for waiting rounds)'>Bet Size</th>";
+      html += "<th title='Effective percentage increase for the next bet if this bet loses'>Increase on Loss %</th>";
+      html += "<th title='Total amount wagered so far in the series'>Cumulative Bet</th>";
+      html += "<th title='Cumulative Bet plus the next bet'>Cumulative Bet+</th>";
+      html += "<th title='Amount you receive if you win that round'>Payout on Win</th>";
+      html += "<th title='Probability of winning this round'>Chance of W</th>";
+      html += "<th title='Probability of losing this round'>Chance of L</th>";
+      html += "<th title='Remaining balance after bets so far'>Balance</th>";
+      html += "<th title='Balance after placing the next bet'>Balance+</th>";
+      html += "<th title='Balance if you win this round (balance + net gain)'>Balance on Win</th>";
+      html += "</tr>";
+      
+      let totalRows = params.N + params.L;
+      let cumulativeBet = 0;
+      for (let i = 1; i <= totalRows; i++) {
+        html += "<tr>";
+        html += "<td>" + i + "</td>";
+        if (i <= params.N) {
+          html += "<td>0.00</td>";                        
+          html += "<td>N/A</td>";                         
+          html += "<td>0.00</td>";                        
+          html += "<td>" + params.S.toFixed(2) + "</td>";   
+          html += "<td>" + (params.S * params.r_game).toFixed(2) + "</td>"; 
+          html += "<td>N/A</td>";                        
+          html += "<td>N/A</td>";                        
+          html += "<td>" + params.B.toFixed(2) + "</td>";   
+          html += "<td>" + (params.B - params.S).toFixed(2) + "</td>"; 
+          html += "<td>N/A</td>";                        
+        } else {
+          let j = i - params.N; // jth betting round.
+          let betSize = params.S * Math.pow(params.r_opt, j - 1);
+          let betSizeRounded = betSize.toFixed(2);
+          cumulativeBet += betSize;
+          let cumulativeRounded = cumulativeBet.toFixed(2);
+          let nextBet = params.S * Math.pow(params.r_opt, j);
+          let cumulativeBetPlus = cumulativeBet + nextBet;
+          let cumulativeBetPlusRounded = cumulativeBetPlus.toFixed(2);
+          let payout = params.S * Math.pow(params.r_opt, j);
+          let payoutRounded = payout.toFixed(2);
+          let chanceWin = Math.pow(params.p_loss, j - 1) * params.p_win_frac * 100;
+          let chanceWinRounded = chanceWin.toFixed(6) + "%";
+          let chanceOverallLoss = Math.pow(params.p_loss, j) * 100;
+          let chanceOverallLossRounded = chanceOverallLoss.toFixed(6) + "%";
+          let balance = params.B - cumulativeBet;
+          let balanceRounded = balance.toFixed(2);
+          let balancePlus = params.B - (cumulativeBet + nextBet);
+          let balancePlusRounded = balancePlus.toFixed(2);
+          let balanceOnWin = params.B - cumulativeBet + payout;
+          let balanceOnWinRounded = balanceOnWin.toFixed(2);
+          
+          let effectiveIOL = ((params.r_opt - 1) * 100).toFixed(2) + "%";
+          
+          html += "<td>" + betSizeRounded + "</td>";
+          html += "<td>" + effectiveIOL + "</td>";
+          html += "<td>" + cumulativeRounded + "</td>";
+          html += "<td>" + cumulativeBetPlusRounded + "</td>";
+          html += "<td>" + payoutRounded + "</td>";
+          html += "<td>" + chanceWinRounded + "</td>";
+          html += "<td>" + chanceOverallLossRounded + "</td>";
+          html += "<td>" + balanceRounded + "</td>";
+          html += "<td>" + balancePlusRounded + "</td>";
+          html += "<td>" + balanceOnWinRounded + "</td>";
+        }
+        html += "</tr>";
+      }
+      html += "</table>";
+      return html;
+    }
+    
+    // Main calculate() function.
+    function calculate() {
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "";
+      
+      let params = computeParameters();
+      if (params.errors.length > 0) {
+        resultsDiv.innerHTML = "<p class='error'>" + params.errors.join(" ") + "</p>";
+        return;
+      }
+      
+      let summaryHtml = "<h3>Results</h3>";
+      summaryHtml += "<p>Bankroll (B): " + params.B + "</p>";
+      summaryHtml += "<p>Minimum Bet (Sₘᵢₙ): " + params.S_min + "</p>";
+      summaryHtml += "<p>Win Probability (p_win): " + params.p_win.toFixed(1) + "%</p>";
+      summaryHtml += "<p>Game Payout Multiplier (r_game): " + params.r_game.toFixed(4) + "</p>";
+      summaryHtml += "<p>Ruin Probability Requirement (RPR): " + (params.rpr * 100).toFixed(6) + "%</p>";
+      summaryHtml += "<p>Minimum Increase % on Loss (Dynamic): " + params.minIncrease.toFixed(2) + "% (i.e. escalation multiplier ≥ " + params.r_min.toFixed(4) + ")</p>";
+      summaryHtml += "<hr>";
+      summaryHtml += "<p>Calculated Maximum Series Length (L): <strong>" + params.L + "</strong></p>";
+      summaryHtml += "<p>Calculated Starting Bet (S): <strong>" + roundTo(params.S, 2).toFixed(2) + "</strong></p>";
+      summaryHtml += "<p>Calculated Waiting Trigger (N): <strong>" + params.N + "</strong></p>";
+      summaryHtml += "<p>Effective Escalation Multiplier (IOL): <strong>" + params.r_opt.toFixed(4) + "</strong> (Increase on Loss: " + ((params.r_opt - 1)*100).toFixed(2) + "%)</p>";
+      summaryHtml += "<p>Resulting Overall Ruin Probability: <strong>" + roundTo(params.overallRuinProb * 100, 6).toFixed(6) + "%</strong></p>";
+      summaryHtml += "<p>Likelihood of ruin: 1/" + params.likelihood + "</p>";
+      summaryHtml += "<p><span class='notice'>Computed fields are shown above. You may lock them if desired.</span></p>";
+      
+      let toggleHtml = "<button onclick='toggleResultSummary()'>Toggle Result Summary</button>";
+      toggleHtml += "<div id='resultSummary'>" + summaryHtml + "</div>";
+      
+      let tableHtml = buildSimulationTable(params);
+      
+      let explanationHtml = "<div id='explanation' style='margin-top:20px; padding:10px; border: 1px solid #ccc; background-color:#f9f9f9;'>";
+      explanationHtml += "<h4>Order of Operations:</h4>";
+      explanationHtml += "<ol>";
+      explanationHtml += "<li>Read base inputs: Bankroll (B), Win Probability (p_win), and Ruin Probability Requirement (RPR). The minimum bet (Sₘᵢₙ) is determined by the GC checkbox.</li>";
+      explanationHtml += "<li>Calculate the Game Payout Multiplier using 99% RTP: <em>r_game = 99 / p_win</em> (rounded to 4 decimals).</li>";
+      explanationHtml += "<li>Dynamically compute the Minimum Increase % on Loss as <em>100 / (r_game - 1)</em>. If the entered value is too low, it is auto-corrected.</li>";
+      explanationHtml += "<li>Determine the maximum series length available from the bankroll (L_B) using Sₘᵢₙ and the minimum escalation multiplier (<em>r_min = 1 + (minIncrease/100)</em>).</li>";
+      explanationHtml += "<li>Reset the waiting trigger (N) to 0, then adjust N upward if needed to meet the ruin probability requirement.</li>";
+      explanationHtml += "<li>Optimize the escalation multiplier (IOL) by choosing the highest multiplier (<em>r_opt</em>) that still yields L = L_B.</li>";
+      explanationHtml += "<li>Compute the Starting Bet using: <em>S = B / (r_opt^L - 1)</em>.</li>";
+      explanationHtml += "<li>Calculate the overall ruin probability as (p_loss)^(N+L) and the likelihood of ruin.</li>";
+      explanationHtml += "<li>Generate a simulation table showing each round’s bet size, cumulative bets, payout, remaining balance, and balance on win.</li>";
+      explanationHtml += "</ol>";
+      explanationHtml += "<p>This process maximizes the number of betting rounds (reducing risk) while optimizing net gain per series and ensuring the ruin probability stays below your specified threshold.</p>";
+      explanationHtml += "</div>";
+      
+      let finalHtml = toggleHtml + tableHtml + explanationHtml;
+      document.getElementById("results").innerHTML = finalHtml;
+    }
+    
+    // SimulateOptimalPwin():
+    // Iterate candidate win probabilities from 2% to 98% and choose the candidate that yields the final remaining balance
+    // closest to 0 (but still positive).
+    function simulateOptimalPwin() {
+      let bestCandidate = null;
+      let bestFinalBalance = Infinity;
+      let candidateParams;
+      for (let candidate = 2; candidate <= 98; candidate++) {
+        // Always reset waiting trigger N to 0 for each candidate.
+        document.getElementById("N").value = 0;
+        document.getElementById("p_win").value = candidate;
+        sliderChanged();
+        candidateParams = computeParameters();
+        if (candidateParams.errors.length > 0) continue;
+        // Only consider candidates with r_opt > 2 (so that final balance > 0).
+        if (candidateParams.r_opt <= 2) continue;
+        let finalBalance = candidateParams.B * (candidateParams.r_opt - 2) / (candidateParams.r_opt - 1);
+        if (finalBalance > 0 && finalBalance < bestFinalBalance) {
+          bestFinalBalance = finalBalance;
+          bestCandidate = candidate;
+        }
+      }
+      
+      if (bestCandidate !== null) {
+        document.getElementById("p_win").value = bestCandidate;
+        sliderChanged();
+        calculate();
+      } else {
+        alert("No win probability in the range 2%-98% produces a final remaining balance above 0.");
+      }
+    }
+  </script>
+</body>
+</html>
