@@ -38,49 +38,52 @@
       <label for="gc">Use GC Minimum Bet (1.00 instead of 0.01):</label>
       <input type="checkbox" id="gc">
     </div>
+    <button onclick="simulateOptimalStrategy()">Find Optimal Strategy</button>
+    <button id="toggleAdvanced" onclick="toggleAdvanced()">► Advanced</button>
   </fieldset>
   
-  <!-- Computed/Locked Parameters Section (Displayed so user can see them) -->
-  <fieldset>
-    <legend>Computed/Locked Parameters</legend>
-    <div class="inputRow">
-      <label for="p_win">Win Probability (p_win):</label>
-      <input type="text" id="p_win" value="50">
-    </div>
-    <div class="inputRow">
-      <label for="r">Game Payout Multiplier (r_game):</label>
-      <input type="text" id="r" value="1.9800">
-    </div>
-    <div class="inputRow">
-      <label for="minIncrease">Chosen IOL (%):</label>
-      <input type="text" id="minIncrease" value="0">
-      <input type="checkbox" id="lock_minIncrease">
-      <span class="locked"> Lock</span>
-    </div>
-    <div class="inputRow">
-      <label for="L">Maximum Series Length (L):</label>
-      <input type="text" id="L" value="">
-      <input type="checkbox" id="lockL">
-      <span class="locked"> Lock</span>
-    </div>
-    <div class="inputRow">
-      <label for="N">Waiting Trigger (N):</label>
-      <input type="text" id="N" value="">
-      <input type="checkbox" id="lockN">
-      <span class="locked"> Lock</span>
-    </div>
-    <div class="inputRow">
-      <label for="S">Starting Bet (S):</label>
-      <input type="text" id="S" value="">
-      <input type="checkbox" id="lockS">
-      <span class="locked"> Lock</span>
-    </div>
-  </fieldset>
-  
-  <!-- Buttons -->
-  <button onclick="calculateOptimalStrategy()">Calculate Optimal Strategy</button>
-  <button onclick="simulateOptimalStrategy()">Simulate Optimal Strategy</button>
-  
+  <!-- Advanced Section (hidden by default) -->
+  <div id="advancedSection" style="display: none;">
+    <fieldset>
+      <legend>Computed/Locked Parameters</legend>
+      <div class="inputRow">
+        <label for="p_win">Win Probability (p_win):</label>
+        <input type="text" id="p_win" value="49.5">
+      </div>
+      <div class="inputRow">
+        <label for="r">Game Payout Multiplier (r_game):</label>
+        <input type="text" id="r">
+      </div>
+      <div class="inputRow">
+        <label for="minIncrease">Chosen IOL (%):</label>
+        <input type="text" id="minIncrease" value="100">
+        <input type="checkbox" id="lock_minIncrease">
+        <span class="locked"> Lock</span>
+      </div>
+      <div class="inputRow">
+        <label for="L">Maximum Series Length (L):</label>
+        <input type="text" id="L" value="">
+        <input type="checkbox" id="lockL">
+        <span class="locked"> Lock</span>
+      </div>
+      <div class="inputRow">
+        <label for="N">Waiting Trigger (N):</label>
+        <input type="text" id="N" value="">
+        <input type="checkbox" id="lockN">
+        <span class="locked"> Lock</span>
+      </div>
+      <div class="inputRow">
+        <label for="S">Starting Bet (S):</label>
+        <input type="text" id="S" value="">
+        <input type="checkbox" id="lockS">
+        <span class="locked"> Lock</span>
+      </div>
+      <button onclick="calculateOptimalStrategy()">Calculate</button>
+    </fieldset>
+  </div>
+
+  <!-- Removed old Computed/Locked Parameters fieldset and standalone Calculate button -->
+
   <div id="results"></div>
   
   <script>
@@ -281,10 +284,10 @@
       let bestFinalBalance = Infinity;
       let candidateParams;
       // Iterate candidate win probabilities from 2% to 98%
-      for (let p = 2; p <= 98; p++) {
+      for (let p = 2; p <= 98; p += 0.1) {
         let r_game = 99 / p;
         let IOL_min = 100 / (r_game - 1);
-        for (let IOL = Math.ceil(IOL_min); IOL <= IOL_min + 500; IOL++) {
+        for (let IOL = Math.ceil(IOL_min); IOL <= IOL_min + 500; IOL += 0.5) {
           candidateParams = computeParametersCandidate(p, IOL);
           if (candidateParams.errors.length > 0) continue;
           if (candidateParams.overallRuinProb > candidateParams.RPR) continue;
@@ -305,6 +308,52 @@
         displayResults(finalParams);
       } else {
         alert("No candidate combination meets the criteria.");
+      }
+    }
+
+    function updateRGame() {
+      let new_pwin = parseFloat(document.getElementById("p_win").value);
+      if (!isNaN(new_pwin) && new_pwin > 0) {
+        // Update slider if it exists
+        let slider = document.getElementById("p_win_slider");
+        if (slider) {
+          slider.value = new_pwin;
+        }
+        let sliderVal = document.getElementById("p_win_slider_val");
+        if (sliderVal) {
+          sliderVal.textContent = new_pwin.toFixed(1) + "%";
+        }
+        // Calculate and update r_game
+        let r_game = 99 / new_pwin;
+        let rElement = document.getElementById("r");
+        if (rElement) {
+          rElement.value = r_game.toFixed(4);
+        }
+        // If minIncrease is not locked, update it
+        let lockMinIncrease = document.getElementById("lock_minIncrease");
+        let minIncreaseElem = document.getElementById("minIncrease");
+        if (lockMinIncrease && !lockMinIncrease.checked && minIncreaseElem) {
+          let computedMinIncrease = 100 / (r_game - 1);
+          minIncreaseElem.value = computedMinIncrease.toFixed(2);
+        }
+      }
+    }
+
+    // Remove previous listeners and override with oninput and onchange assignments:
+    document.getElementById("p_win").oninput = updateRGame;
+    document.getElementById("p_win").onchange = updateRGame;
+    updateRGame();
+
+    // --- Toggle Advanced Section ---
+    function toggleAdvanced() {
+      var adv = document.getElementById("advancedSection");
+      var toggleBtn = document.getElementById("toggleAdvanced");
+      if (adv.style.display === "none") {
+        adv.style.display = "block";
+        toggleBtn.textContent = "▼ Advanced";
+      } else {
+        adv.style.display = "none";
+        toggleBtn.textContent = "► Advanced";
       }
     }
   </script>
