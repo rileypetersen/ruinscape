@@ -1,0 +1,24 @@
+{
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "name": "ruinscape",
+  "version": "1.0.0",
+  "main": "monteCarloSimulation.js",
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rileypetersen/ruinscape.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/rileypetersen/ruinscape/issues"
+  },
+  "homepage": "https://github.com/rileypetersen/ruinscape#readme",
+  "description": ""
+}

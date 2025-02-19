@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Optimal Bet Strategy</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; margin: 20px; }
     input, button, select, textarea { font-family: 'Inter', sans-serif; }
@@ -46,6 +45,8 @@
       </div>
       <button onclick="simulateOptimalStrategy()">Find Optimal Strategy</button>
       <button id="toggleAdvanced" onclick="toggleAdvanced()">► Advanced</button>
+      <button onclick="simulateAPI()">Run Simulation API</button>
+      <label style="margin-left: 10px;"><input type="checkbox" id="debugCheckbox"> Debug</label>
     </fieldset>
     
     <fieldset id="setupSection" style="width: 50%; border: 1px solid #ccc; padding: 10px;">
@@ -53,6 +54,8 @@
       <div id="setupContent">Setup info will appear here upon calculation</div>
     </fieldset>
   </div>
+  
+  <div id="simulationResult" style="margin-top:20px; font-weight:bold;"></div>
   
   <!-- Advanced Section (hidden by default) -->
   <div id="advancedSection" style="display: none;">
@@ -189,6 +192,18 @@
     function displayResults(params) {
       const resultsDiv = document.getElementById("results");
       
+      // Update advanced input fields with computed values
+      const p_winElem = document.getElementById('p_win');
+      if (p_winElem) p_winElem.value = params.p_win;
+      const minIncreaseElem = document.getElementById('minIncrease');
+      if (minIncreaseElem) minIncreaseElem.value = params.IOL;
+      const LElem = document.getElementById('L');
+      if (LElem) LElem.value = params.L;
+      const NElem = document.getElementById('N');
+      if (NElem) NElem.value = params.N;
+      const SElem = document.getElementById('S');
+      if (SElem) SElem.value = params.S.toFixed(2);
+      
       let summaryHtml = "<h3 style='margin-top:0;'>Results</h3>";
       summaryHtml += "<div style='font-size:0.8em;'>";
       summaryHtml += "<p><strong>Bankroll (B):</strong> " + params.B + "</p>";
@@ -252,6 +267,7 @@
                             "</div>";
       
       resultsDiv.innerHTML = resultContainer + explanationHtml;
+      window.lastComputedParams = params;
     }
     
     // --- Build Simulation Table ---
@@ -411,6 +427,55 @@
         adv.style.display = "none";
         toggleBtn.textContent = "► Advanced";
       }
+    }
+
+    function simulateAPI() {
+      const debugMode = document.getElementById('debugCheckbox').checked;
+
+      // Use default seeds for simulation (could be exposed as inputs later)
+      const serverSeed = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+      const clientSeed = 'clientseed12345';
+      const nonce = 'nonce1';
+      const cursor = 0;
+      
+      // Retrieve input values with proper fallbacks
+      const B = parseFloat(document.getElementById('B').value) || 100;
+
+      const p_winElem = document.getElementById('p_win');
+      const p_winValue = (p_winElem && p_winElem.value && p_winElem.value.trim() !== '') ? p_winElem.value : '49.5';
+      const p_win = Math.round(parseFloat(p_winValue) * 10) / 10 || 49.5;
+
+      const minIncreaseElem = document.getElementById('minIncrease');
+      const IOLValue = (minIncreaseElem && minIncreaseElem.value && minIncreaseElem.value.trim() !== '') ? minIncreaseElem.value : '100';
+      const IOL = parseFloat(IOLValue) || 100;
+
+      let rprStr = document.getElementById('rpr').value;
+      const RPR = parseFloat(rprStr.replace('%','')) / 100 || 0.01;
+
+      const iterations = debugMode ? 1 : 5;
+      
+      const payload = { serverSeed, clientSeed, nonce, cursor, B, p_win, IOL, RPR, iterations };
+      
+      // Choose endpoint based on debug mode
+      const endpoint = debugMode ? '/simulateDebug' : '/simulate';
+      
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(response => response.json())
+      .then(result => {
+        if (debugMode) {
+          document.getElementById('simulationResult').innerText = 'Rounds: ' + result.rounds + '\n' + result.debugLog.join('\n');
+        } else {
+          document.getElementById('simulationResult').innerText = 'Average rounds until ruin: ' + result.avgRounds;
+        }
+      })
+      .catch(error => {
+        console.error('Simulation API error:', error);
+        document.getElementById('simulationResult').innerText = 'Error running simulation.';
+      });
     }
   </script>
 </body>
