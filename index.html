@@ -2,45 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Optimal Bet Strategy</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: sans-serif; margin: 20px; }
+    body { font-family: 'Inter', sans-serif; margin: 20px; }
+    input, button, select, textarea { font-family: 'Inter', sans-serif; }
     fieldset { margin-bottom: 20px; }
     .inputRow { margin-bottom: 10px; }
     label { display: inline-block; width: 320px; }
     input[type="text"] { width: 100px; }
+    input[type="checkbox"] { vertical-align: middle; }
     #results { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
     #resultSummary { margin-bottom: 20px; }
     .error { color: red; font-weight: bold; }
     .notice { color: blue; font-weight: bold; }
-    button { margin-right: 10px; }
+    button { margin-right: 10px; font-family: 'Inter', sans-serif; }
     table { border-collapse: collapse; margin-top: 20px; font-size: 12px; }
     table, th, td { border: 1px solid black; }
     th, td { padding: 5px; text-align: center; }
+    @media screen and (max-width: 960px) {
+      #topRow { flex-direction: column !important; }
+      #topRow fieldset, #advancedSection fieldset { box-sizing: border-box; width: 100% !important; margin: 0 0 20px 0 !important; border: 1px solid #ccc !important; padding: 10px !important; }
+    }
   </style>
 </head>
 <body>
-  <h2>Optimal Bet Strategy</h2>
-  
-  <!-- Base Parameters: Only Bankroll and RPR are inputs (plus GC for Sₘᵢₙ) -->
-  <fieldset>
-    <legend>Base Parameters</legend>
-    <div class="inputRow">
-      <label for="B">Bankroll (B):</label>
-      <input type="text" id="B" value="555">
-    </div>
-    <div class="inputRow">
-      <label for="rpr">Ruin Probability Requirement (RPR):</label>
-      <input type="text" id="rpr" value="0.001000%">
-      <span>(e.g., 0.001000% for 0.001%)</span>
-    </div>
-    <div class="inputRow">
-      <label for="gc">Use GC Minimum Bet (1.00 instead of 0.01):</label>
-      <input type="checkbox" id="gc">
-    </div>
-    <button onclick="simulateOptimalStrategy()">Find Optimal Strategy</button>
-    <button id="toggleAdvanced" onclick="toggleAdvanced()">► Advanced</button>
-  </fieldset>
+  <!-- <h2>Dice Strategy Generator</h2> -->
+  <div id="topRow" style="display: flex; flex-direction: row; align-items: flex-start; gap: 20px; width: 100%;">
+    <fieldset style="width: 50%;">
+      <legend>Base Parameters</legend>
+      <div class="inputRow">
+        <label for="B">Bankroll (B):</label>
+        <input type="text" id="B" value="100">
+      </div>
+      <div class="inputRow">
+        <label for="rpr">Ruin Probability Requirement (RPR):</label>
+        <input type="text" id="rpr" value="1%">
+      </div>
+      <div class="inputRow">
+        <label for="gc" style="font-size: 11px;">Use GC Minimum Bet (0.11 instead of 0.01):</label>
+        <input type="checkbox" id="gc">
+      </div>
+      <button onclick="simulateOptimalStrategy()">Find Optimal Strategy</button>
+      <button id="toggleAdvanced" onclick="toggleAdvanced()">► Advanced</button>
+    </fieldset>
+    
+    <fieldset id="setupSection" style="width: 50%; border: 1px solid #ccc; padding: 10px;">
+      <legend>Setup</legend>
+      <div id="setupContent">Setup info will appear here upon calculation</div>
+    </fieldset>
+  </div>
   
   <!-- Advanced Section (hidden by default) -->
   <div id="advancedSection" style="display: none;">
@@ -92,6 +104,15 @@
       return Number(Math.round(num + "e" + decimals) + "e-" + decimals);
     }
     
+    // Add helper functions for decimal arithmetic (rounded to 8 decimals) near the top of the script, after roundTo:
+    function decMul(a, b) {
+      return Number((a * b).toFixed(8));
+    }
+
+    function decAdd(a, b) {
+      return Number((a + b).toFixed(8));
+    }
+    
     // --- Core Model Computation ---
     // This function computes all parameters given a candidate p_win and IOL.
     // p_win is in percent.
@@ -103,7 +124,7 @@
       let B = parseFloat(document.getElementById("B").value);
       let RPR_raw = document.getElementById("rpr").value.replace("%", "");
       let RPR = parseFloat(RPR_raw) / 100;  // e.g., 0.001000% becomes 0.00001.
-      let S_min = document.getElementById("gc").checked ? 1.00 : 0.01;
+      let S_min = document.getElementById("gc").checked ? 0.11 : 0.01;
       
       if (isNaN(B) || B <= 0) errors.push("Bankroll (B) must be a positive number.");
       if (isNaN(p_win) || p_win < 2 || p_win > 98) errors.push("Candidate p_win must be between 2% and 98%.");
@@ -168,7 +189,8 @@
     function displayResults(params) {
       const resultsDiv = document.getElementById("results");
       
-      let summaryHtml = "<h3>Optimal Strategy Results</h3>";
+      let summaryHtml = "<h3 style='margin-top:0;'>Results</h3>";
+      summaryHtml += "<div style='font-size:0.8em;'>";
       summaryHtml += "<p><strong>Bankroll (B):</strong> " + params.B + "</p>";
       summaryHtml += "<p><strong>Ruin Probability Requirement (RPR):</strong> " + (params.RPR * 100).toFixed(6) + "%</p>";
       summaryHtml += "<p><strong>Optimal Win Probability (p_win):</strong> " + params.p_win.toFixed(1) + "%</p>";
@@ -181,34 +203,62 @@
       summaryHtml += "<p><strong>Overall Ruin Probability:</strong> " + (params.overallRuinProb * 100).toFixed(6) + "%</p>";
       summaryHtml += "<p><strong>Likelihood of Ruin:</strong> 1/" + params.likelihood + "</p>";
       summaryHtml += "<p><strong>Final Remaining Balance (if all bets lose):</strong> " + params.finalBalance.toFixed(2) + "</p>";
+
+      // Updated expected games calculation using reciprocal of overallRuinProb
+      let expectedGames = 1 / params.overallRuinProb;
+      summaryHtml += "<p><strong>Expected Games Until Ruin:</strong> " + expectedGames.toFixed(0) + "</p>";
+
+      let setupHtml = "Set win chance to " + params.p_win.toFixed(1) + "%<br>";
+      if (params.N > 0) {
+          setupHtml += "Set base bet to 0.00<br>";
+          setupHtml += "<ul>";
+          setupHtml += "<li><strong>Custom</strong></li>";
+          setupHtml += "<li>Streak greater than " + params.N + " losses, Increase amount " + params.IOL.toFixed(2) + "%</li>";
+          setupHtml += "<li>First streak of " + params.N + " losses, set amount to " + params.S.toFixed(2) + "</li>";
+          setupHtml += "<li>Every 1 win, reset amount</li>";
+          setupHtml += "</ul>";
+      } else {
+          setupHtml += "<ul>";
+          setupHtml += "<li><strong>Auto</strong></li>";
+          setupHtml += "<li>Starting bet = " + params.S.toFixed(2) + "</li>";
+          setupHtml += "<li>Increase on loss = " + params.IOL.toFixed(2) + "%</li>";
+          setupHtml += "</ul>";
+      }
+
+      document.getElementById("setupContent").innerHTML = setupHtml;
+      document.getElementById("setupSection").style.display = 'block';
       
-      let toggleHtml = "<button onclick='toggleResultSummary()'>Toggle Result Summary</button>";
-      toggleHtml += "<div id='resultSummary'>" + summaryHtml + "</div>";
+      let summaryDisplayHtml = "<div id='resultSummary'>" + summaryHtml + "</div>";
       
       let tableHtml = buildSimulationTable(params);
       
       let explanationHtml = "<div id='explanation' style='margin-top:20px; padding:10px; border:1px solid #ccc; background-color:#f9f9f9;'>";
       explanationHtml += "<h4>Order of Operations:</h4>";
       explanationHtml += "<ol>";
-      explanationHtml += "<li>RTP is fixed at 99%, so r_game = 99 / p_win.</li>";
-      explanationHtml += "<li>The minimum increase on loss (IOL) is free, but must be at least IOL_min = 100/(r_game - 1).</li>";
-      explanationHtml += "<li>The escalation multiplier is r_opt = 1 + (IOL/100).</li>";
-      explanationHtml += "<li>Maximum series length is L = floor( ln(B/Sₘᵢₙ+1) / ln(r_opt) ).</li>";
-      explanationHtml += "<li>Waiting trigger is N = max(0, ceil( ln(RPR)/ln(1 - p_win/100) ) - L), so that overall ruin probability = (p_loss)^(N+L) ≤ RPR.</li>";
-      explanationHtml += "<li>Starting bet is S = B / (r_opt^L - 1).</li>";
-      explanationHtml += "<li>Final remaining balance = B*(r_opt - 2)/(r_opt - 1).</li>";
-      explanationHtml += "<li>The simulation chooses the candidate (p_win and IOL) that minimizes the final remaining balance (but remains > 0) while meeting the RPR threshold.</li>";
+      explanationHtml += "<li>RTP is fixed at 99%, so the game payout multiplier is calculated as r_game = 99 / p_win.</li>";
+      explanationHtml += "<li>The candidate Increase-On-Loss (IOL) must be at least IOL_min = 100 / (r_game - 1) to ensure recoverability.</li>";
+      explanationHtml += "<li>The escalation multiplier is computed as r_opt = 1 + (IOL / 100).</li>";
+      explanationHtml += "<li>The maximum series length is L = floor( ln(B/S_min + 1) / ln(r_opt) ), where S_min is the minimum bet (0.11 if GC is used, otherwise 0.01). If L is less than 1, it is set to 1.</li>";
+      explanationHtml += "<li>The waiting trigger is determined as N = max(0, ceil( ln(RPR) / ln(1 - p_win/100) ) - L), ensuring that the overall ruin probability (p_loss)^(N+L) does not exceed RPR, with p_loss = 1 - p_win/100.</li>";
+      explanationHtml += "<li>The starting bet is S = B / (r_opt^L - 1).</li>";
+      explanationHtml += "<li>If all bets are lost, the final remaining balance is B*(r_opt - 2)/(r_opt - 1).</li>";
+      explanationHtml += "<li>The simulation iterates candidate pairs (p_win and IOL) and selects the one that minimizes the final remaining balance while meeting the RPR threshold, preferring candidates with N = 0 when available.</li>";
       explanationHtml += "</ol>";
       explanationHtml += "</div>";
       
-      resultsDiv.innerHTML = toggleHtml + tableHtml + explanationHtml;
+      let resultContainer = "<div id='resultContainer' style='display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px;'>" +
+                            "<div id='resultTableContainer' style='flex: 1 1 auto;'>" + tableHtml + "</div>" +
+                            "<div id='resultSummaryContainer' style='flex: 1 1 300px;'>" + summaryDisplayHtml + "</div>" +
+                            "</div>";
+      
+      resultsDiv.innerHTML = resultContainer + explanationHtml;
     }
     
     // --- Build Simulation Table ---
     // This table shows the complete loss streak:
     // First N rounds are "waiting" rounds (0 bets), then L rounds of actual bets.
     function buildSimulationTable(params) {
-      let html = "<h3>Complete Loss Streak</h3>";
+      let html = "<h3 style='margin-top:0;'>Loss Streak Simulation</h3>";
       html += "<table><tr>";
       html += "<th>Round #</th>";
       html += "<th>Bet Size</th>";
@@ -219,34 +269,38 @@
       html += "<th>Balance+</th>";
       html += "</tr>";
       
-      // First, add waiting rounds (N rounds with 0 bet)
+      // Round the initial bet for UI display (S0 already rounded to two decimals)
+      let S0 = Number(params.S.toFixed(2));
+      
+      // Waiting rounds (N rounds): round all numeric UI values
       for (let i = 1; i <= params.N; i++) {
         html += "<tr>";
         html += "<td>" + i + " (Wait)</td>";
-        html += "<td>0.00</td>";
-        html += "<td>0.00</td>";
-        // For waiting rounds, if lost, the first betting round would occur:
-        html += "<td>" + params.S.toFixed(2) + "</td>";  // Bet+ equals starting bet S
+        html += "<td>" + (0).toFixed(2) + "</td>";
+        html += "<td>" + (0).toFixed(2) + "</td>";
+        // For waiting rounds, if lost, the next bet would be S0:
+        html += "<td>" + S0.toFixed(2) + "</td>";
         html += "<td>N/A</td>";
         html += "<td>" + params.B.toFixed(2) + "</td>";
-        html += "<td>" + (params.B - params.S).toFixed(2) + "</td>";
+        html += "<td>" + (params.B - S0).toFixed(2) + "</td>";
         html += "</tr>";
       }
       
-      // Then, add the actual betting rounds (L rounds)
+      // Actual betting rounds (L rounds): round UI values to 2 decimals
       let cumulative = 0;
-      for (let i = params.N + 1; i <= params.N + params.L; i++) {
-        let j = i - params.N; // j = 1,...,L
-        let bet = params.S * Math.pow(params.r_opt, j - 1);
-        cumulative += bet;
-        let payout = params.S * Math.pow(params.r_opt, j);
+      for (let j = 1; j <= params.L; j++) {
+        // Compute current bet using S0
+        let currentBet = S0 * Math.pow(params.r_opt, j - 1);
+        cumulative = cumulative + currentBet;
+        let nextBet = S0 * Math.pow(params.r_opt, j);
+        let betPlus = cumulative + nextBet;
+        let payout = nextBet;
         let balance = params.B - cumulative;
-        // Bet+ is the cumulative bet if the next bet is placed
-        let betPlus = cumulative + payout;
         let balancePlus = params.B - betPlus;
+
         html += "<tr>";
-        html += "<td>" + i + "</td>";
-        html += "<td>" + bet.toFixed(2) + "</td>";
+        html += "<td>" + (params.N + j) + "</td>";
+        html += "<td>" + currentBet.toFixed(2) + "</td>";
         html += "<td>" + cumulative.toFixed(2) + "</td>";
         html += "<td>" + betPlus.toFixed(2) + "</td>";
         html += "<td>" + payout.toFixed(2) + "</td>";
@@ -257,12 +311,6 @@
       
       html += "</table>";
       return html;
-    }
-    
-    // --- Toggle Result Summary ---
-    function toggleResultSummary() {
-      const summaryDiv = document.getElementById("resultSummary");
-      summaryDiv.style.display = (summaryDiv.style.display === "none") ? "block" : "none";
     }
     
     // --- Main Calculate Function (for manual calculation) ---
@@ -292,13 +340,21 @@
           if (candidateParams.errors.length > 0) continue;
           if (candidateParams.overallRuinProb > candidateParams.RPR) continue;
           if (candidateParams.r_opt <= 2) continue;
-          // Prioritize candidate with minimal waiting trigger (N).
-          if (candidateParams.N < bestCandidateN ||
-              (candidateParams.N === bestCandidateN && candidateParams.finalBalance < bestFinalBalance)) {
-            bestCandidateN = candidateParams.N;
-            bestFinalBalance = candidateParams.finalBalance;
-            bestCandidate.p_win = p;
-            bestCandidate.IOL = IOL;
+          // Prefer candidates that do not require any waiting rounds (N == 0).
+          if (candidateParams.N === 0) {
+              // If we haven't selected a candidate with N == 0 yet, or found one with a lower final balance
+              if (bestCandidateN !== 0 || candidateParams.finalBalance < bestFinalBalance) {
+                  bestCandidateN = 0;
+                  bestFinalBalance = candidateParams.finalBalance;
+                  bestCandidate.p_win = p;
+                  bestCandidate.IOL = IOL;
+              }
+          } else if (bestCandidateN !== 0 && (candidateParams.N < bestCandidateN ||
+                       (candidateParams.N === bestCandidateN && candidateParams.finalBalance < bestFinalBalance))) {
+              bestCandidateN = candidateParams.N;
+              bestFinalBalance = candidateParams.finalBalance;
+              bestCandidate.p_win = p;
+              bestCandidate.IOL = IOL;
           }
         }
       }
