@@ -33,11 +33,11 @@
       <legend>Base Parameters</legend>
       <div class="inputRow">
         <label for="B">Bankroll (B):</label>
-        <input type="text" id="B">
+        <input type="text" id="B" value="1000">
       </div>
       <div class="inputRow">
         <label for="rpr">Ruin Probability Requirement (RPR):</label>
-        <input type="text" id="rpr">
+        <input type="text" id="rpr" value=".01">
       </div>
       <div class="inputRow">
         <label for="gc" style="font-size: 11px;">Use GC Minimum Bet (0.11 instead of 0.01):</label>
@@ -46,6 +46,14 @@
       <div class="inputRow">
         <label for="minIncreaseBreakEven" style="font-size: 11px;">Minimum increase is break-even</label>
         <input type="checkbox" id="minIncreaseBreakEven">
+      </div>
+      <div class="inputRow">
+        <label for="maximizeProfit" style="font-size: 11px;">Maximize profit</label>
+        <input type="checkbox" id="maximizeProfit">
+      </div>
+      <div class="inputRow" id="maxNRow" style="display: none;">
+        <label for="maxN" style="font-size: 11px;">Maximum N:</label>
+        <input type="number" id="maxN" value="0" min="0" max="100">
       </div>
       <button onclick="simulateOptimalStrategy()">Find Optimal Strategy</button>
       <button id="toggleAdvanced" onclick="toggleAdvanced()">► Advanced</button>
@@ -124,7 +132,7 @@
     // This function computes all parameters given a candidate p_win and IOL.
     // p_win is in percent.
     // IOL (in percent) is a free variable that must be >= IOL_min = 100/(r_game-1).
-    function computeParametersCandidate(p_win, IOL) {
+    function computeParametersCandidate(p_win, IOL, forcedN) {
       let errors = [];
       
       // User inputs:
@@ -161,9 +169,13 @@
       let L = Math.floor(Math.log(B / S_min + 1) / Math.log(r_opt));
       if (L < 1) L = 1;
       
-      // Waiting trigger N: set such that overall ruin probability = (p_loss)^(N+L) <= RPR.
-      // Solve for N: N >= ceil( ln(RPR)/ln(p_loss) ) - L.
-      let N = Math.max(0, Math.ceil(Math.log(RPR) / Math.log(p_loss)) - L);
+      // Waiting trigger N: If forcedN is provided, use it; otherwise, compute normally
+      let N;
+      if (typeof forcedN === 'number') {
+        N = forcedN;
+      } else {
+        N = Math.max(0, Math.ceil(Math.log(RPR) / Math.log(p_loss)) - L);
+      }
       
       // Starting bet S:
       let S = B / (Math.pow(r_opt, L) - 1);
@@ -283,17 +295,18 @@
     // This table shows the complete loss streak:
     // First N rounds are "waiting" rounds (0 bets), then L rounds of actual bets.
     function buildSimulationTable(params) {
-      // Updated buildSimulationTable: displaying Bet Increase as currentBet*(r_opt-1)
+      // Updated buildSimulationTable: displaying Bet Increase as currentBet*(r_opt-1) and including Net Gain on Win column
       let html = "<h3 style='margin-top:0;'>Loss Streak Simulation</h3>";
       html += "<table><tr>";
       html += "<th>Round #</th>";
       html += "<th>Bet Size</th>";
       html += "<th>Bet Increase</th>";
       html += "<th>Cumulative Bet</th>";
-      html += "<th>Bet+</th>";
+      html += "<th>Next Bet</th>";
       html += "<th>Payout on Win</th>";
+      html += "<th>Net Gain on Win</th>";
       html += "<th>Remaining Balance</th>";
-      html += "<th>Balance+</th>";
+      html += "<th>Next Balance</th>";
       html += "</tr>";
       
       // Initial bet rounded to two decimals
@@ -308,6 +321,7 @@
         html += "<td>" + (0).toFixed(2) + "</td>";
         html += "<td>N/A</td>";
         html += "<td>N/A</td>";
+        html += "<td>N/A</td>";
         html += "<td>" + params.B.toFixed(2) + "</td>";
         html += "<td>" + (params.B - S0).toFixed(2) + "</td>";
         html += "</tr>";
@@ -320,12 +334,15 @@
         cumulative += currentBet;
         let nextBet = S0 * Math.pow(params.r_opt, j);
         let betPlus = cumulative + nextBet;
-        let payout = nextBet;
+        let payout = currentBet * params.r_game;
         let balance = params.B - cumulative;
         let balancePlus = params.B - betPlus;
         
         // Calculate bet increase as (currentBet * (r_opt - 1))
         let betIncrease = currentBet * (params.r_opt - 1);
+        
+        // Calculate net gain on win as (payout - cumulative)
+        let netGain = payout - cumulative;
         
         html += "<tr>";
         html += "<td>" + (params.N + j) + "</td>";
@@ -334,6 +351,7 @@
         html += "<td>" + cumulative.toFixed(2) + "</td>";
         html += "<td>" + betPlus.toFixed(2) + "</td>";
         html += "<td>" + payout.toFixed(2) + "</td>";
+        html += "<td>" + netGain.toFixed(2) + "</td>";
         html += "<td>" + balance.toFixed(2) + "</td>";
         html += "<td>" + balancePlus.toFixed(2) + "</td>";
         html += "</tr>";
@@ -354,46 +372,107 @@
       displayResults(params);
     }
     
-    // --- Simulation Optimization ---
-    // Updated version that prioritizes minimal N, then finalBalance:
+    // New helper function to compute expected profit for a candidate
+    function computeExpectedProfit(params) {
+      let S0 = Number(params.S.toFixed(2));
+      let r_opt = params.r_opt;
+      let L = params.L;
+      let p_win_frac = params.p_win / 100;
+      let p_loss = 1 - p_win_frac;
+      let totalProfit = 0;
+      for (let j = 1; j <= L; j++) {
+        let winningPayout = S0 * Math.pow(r_opt, j);
+        let totalBet = S0 * (Math.pow(r_opt, j) - 1) / (r_opt - 1);
+        let profit_j = winningPayout - totalBet;
+        totalProfit += p_win_frac * Math.pow(p_loss, j - 1) * profit_j;
+      }
+      let lossOutcome = S0 * (Math.pow(r_opt, L) - 1) / (r_opt - 1);
+      totalProfit -= Math.pow(p_loss, L) * lossOutcome;
+      return totalProfit;
+    }
+
+    // New function to compute overall profit (sum of net gains on win across all betting rounds) for max-overall profit
+    function computeOverallProfit(params) {
+      let S0 = Number(params.S.toFixed(2));
+      let r_opt = params.r_opt;
+      let L = params.L;
+      let overallProfit = 0;
+      for (let j = 1; j <= L; j++) {
+        let winningPayout = S0 * Math.pow(r_opt, j);
+        let totalBet = S0 * (Math.pow(r_opt, j) - 1) / (r_opt - 1);
+        let profit_j = winningPayout - totalBet;
+        overallProfit += profit_j;
+      }
+      return overallProfit;
+    }
+
+    // Updated simulateOptimalStrategy function with maximize profit toggle
     function simulateOptimalStrategy() {
-      let bestCandidate = { p_win: null, IOL: null };
-      let bestCandidateN = Infinity;
-      let bestFinalBalance = Infinity;
-      let candidateParams;
-      // Iterate candidate win probabilities from 2% to 98%
-      for (let p = 2; p <= 98; p += 0.1) {
-        let r_game = 99 / p;
-        let IOL_min = 100 / (r_game - 1);
-        for (let IOL = Math.ceil(IOL_min); IOL <= IOL_min + 500; IOL += 0.5) {
-          candidateParams = computeParametersCandidate(p, IOL);
-          if (candidateParams.errors.length > 0) continue;
-          if (candidateParams.overallRuinProb > candidateParams.RPR) continue;
-          if (candidateParams.r_opt <= 2) continue;
-          // Prefer candidates that do not require any waiting rounds (N == 0).
-          if (candidateParams.N === 0) {
-              // If we haven't selected a candidate with N == 0 yet, or found one with a lower final balance
+      const maximizeProfitToggle = document.getElementById("maximizeProfit").checked;
+      if (maximizeProfitToggle) {
+        let bestCandidate = { p_win: null, IOL: null, N: null };
+        let bestProfit = -Infinity;
+        let candidateParams;
+        let maxN = parseInt(document.getElementById("maxN").value, 10);
+        // Iterate candidate win probabilities from 2% to 98%
+        for (let p = 2; p <= 98; p += 0.1) {
+            let r_game = 99 / p;
+            let IOL_min = 100 / (r_game - 1);
+            for (let IOL = Math.ceil(IOL_min); IOL <= IOL_min + 2000; IOL += 1) {
+                for (let n = 0; n <= maxN; n++) {
+                    candidateParams = computeParametersCandidate(p, IOL, n);
+                    if (candidateParams.errors.length > 0) continue;
+                    if (candidateParams.finalBalance <= 0) continue;
+                    let profit = computeExpectedProfit(candidateParams);
+                    if (profit > bestProfit) {
+                        bestProfit = profit;
+                        bestCandidate = { p_win: p, IOL: IOL, N: n };
+                    }
+                }
+            }
+        }
+        if (bestCandidate.p_win !== null) {
+             let finalParams = computeParametersCandidate(bestCandidate.p_win, bestCandidate.IOL, bestCandidate.N);
+             displayResults(finalParams);
+        } else {
+             alert("No candidate combination meets the profit criteria.");
+        }
+      } else {
+        // Original non-maximize profit branch...
+        let bestCandidate = { p_win: null, IOL: null };
+        let bestCandidateN = Infinity;
+        let bestFinalBalance = Infinity;
+        let candidateParams;
+        for (let p = 2; p <= 98; p += 0.1) {
+          let r_game = 99 / p;
+          let IOL_min = 100 / (r_game - 1);
+          for (let IOL = Math.ceil(IOL_min); IOL <= IOL_min + 2000; IOL += 1) {
+            candidateParams = computeParametersCandidate(p, IOL);
+            if (candidateParams.errors.length > 0) continue;
+            if (candidateParams.finalBalance <= 0) continue;
+            if (candidateParams.r_opt <= 0) continue;
+            if (candidateParams.N === 0) {
               if (bestCandidateN !== 0 || candidateParams.finalBalance < bestFinalBalance) {
-                  bestCandidateN = 0;
-                  bestFinalBalance = candidateParams.finalBalance;
-                  bestCandidate.p_win = p;
-                  bestCandidate.IOL = IOL;
+                bestCandidateN = 0;
+                bestFinalBalance = candidateParams.finalBalance;
+                bestCandidate.p_win = p;
+                bestCandidate.IOL = IOL;
               }
-          } else if (bestCandidateN !== 0 && (candidateParams.N < bestCandidateN ||
-                       (candidateParams.N === bestCandidateN && candidateParams.finalBalance < bestFinalBalance))) {
+            } else if (bestCandidateN !== 0 && (candidateParams.N < bestCandidateN ||
+                         (candidateParams.N === bestCandidateN && candidateParams.finalBalance < bestFinalBalance))) {
               bestCandidateN = candidateParams.N;
               bestFinalBalance = candidateParams.finalBalance;
               bestCandidate.p_win = p;
               bestCandidate.IOL = IOL;
+            }
           }
         }
-      }
-
-      if (bestCandidate.p_win !== null) {
-        let finalParams = computeParametersCandidate(bestCandidate.p_win, bestCandidate.IOL);
-        displayResults(finalParams);
-      } else {
-        alert("No candidate combination meets the criteria.");
+        if (bestCandidate.p_win !== null) {
+          let finalParams = computeParametersCandidate(bestCandidate.p_win, bestCandidate.IOL);
+          displayResults(finalParams);
+        } else {
+          alert("No candidate combination meets the criteria.");
+        }
       }
     }
 
@@ -491,6 +570,11 @@
         document.getElementById('simulationResult').innerText = 'Error running simulation.';
       });
     }
+
+    // Add an onchange handler for maximizeProfit to toggle the visibility of maxNRow
+    document.getElementById("maximizeProfit").onchange = function() {
+      document.getElementById("maxNRow").style.display = this.checked ? "block" : "none";
+    };
   </script>
 </body>
 </html>
