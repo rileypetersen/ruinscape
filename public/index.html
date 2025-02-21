@@ -33,15 +33,19 @@
       <legend>Base Parameters</legend>
       <div class="inputRow">
         <label for="B">Bankroll (B):</label>
-        <input type="text" id="B" value="100">
+        <input type="text" id="B">
       </div>
       <div class="inputRow">
         <label for="rpr">Ruin Probability Requirement (RPR):</label>
-        <input type="text" id="rpr" value="1%">
+        <input type="text" id="rpr">
       </div>
       <div class="inputRow">
         <label for="gc" style="font-size: 11px;">Use GC Minimum Bet (0.11 instead of 0.01):</label>
         <input type="checkbox" id="gc">
+      </div>
+      <div class="inputRow">
+        <label for="minIncreaseBreakEven" style="font-size: 11px;">Minimum increase is break-even</label>
+        <input type="checkbox" id="minIncreaseBreakEven">
       </div>
       <button onclick="simulateOptimalStrategy()">Find Optimal Strategy</button>
       <button id="toggleAdvanced" onclick="toggleAdvanced()">► Advanced</button>
@@ -63,7 +67,7 @@
       <legend>Computed/Locked Parameters</legend>
       <div class="inputRow">
         <label for="p_win">Win Probability (p_win):</label>
-        <input type="text" id="p_win" value="49.5">
+        <input type="text" id="p_win">
       </div>
       <div class="inputRow">
         <label for="r">Game Payout Multiplier (r_game):</label>
@@ -71,25 +75,25 @@
       </div>
       <div class="inputRow">
         <label for="minIncrease">Chosen IOL (%):</label>
-        <input type="text" id="minIncrease" value="100">
+        <input type="text" id="minIncrease">
         <input type="checkbox" id="lock_minIncrease">
         <span class="locked"> Lock</span>
       </div>
       <div class="inputRow">
         <label for="L">Maximum Series Length (L):</label>
-        <input type="text" id="L" value="">
+        <input type="text" id="L">
         <input type="checkbox" id="lockL">
         <span class="locked"> Lock</span>
       </div>
       <div class="inputRow">
         <label for="N">Waiting Trigger (N):</label>
-        <input type="text" id="N" value="">
+        <input type="text" id="N">
         <input type="checkbox" id="lockN">
         <span class="locked"> Lock</span>
       </div>
       <div class="inputRow">
         <label for="S">Starting Bet (S):</label>
-        <input type="text" id="S" value="">
+        <input type="text" id="S">
         <input type="checkbox" id="lockS">
         <span class="locked"> Lock</span>
       </div>
@@ -141,12 +145,17 @@
       
       // Compute the minimum IOL required:
       let IOL_min = 100 / (r_game - 1);
-      if (IOL < IOL_min) {
-        errors.push("Candidate IOL must be at least " + IOL_min.toFixed(2) + "% to sustain losses.");
+      // If the "Minimum increase is break-even" checkbox is checked, enforce the minimum IOL
+      if (document.getElementById("minIncreaseBreakEven").checked) {
+        if (IOL < IOL_min) {
+          errors.push("Candidate IOL must be at least " + IOL_min.toFixed(2) + "% to sustain losses.");
+        }
       }
       
-      // Use free variable IOL to define the escalation multiplier:
-      let r_opt = 1 + (IOL / 100);
+      // Use free variable IOL to define the escalation multiplier.
+      // If "Minimum increase is break-even" is checked, ensure escalation multiplier is at least break-even.
+      let effectiveIOL = document.getElementById("minIncreaseBreakEven").checked ? Math.max(IOL, IOL_min) : IOL;
+      let r_opt = 1 + (effectiveIOL / 100);
       
       // Maximum series length L (using r_opt):
       let L = Math.floor(Math.log(B / S_min + 1) / Math.log(r_opt));
@@ -274,10 +283,12 @@
     // This table shows the complete loss streak:
     // First N rounds are "waiting" rounds (0 bets), then L rounds of actual bets.
     function buildSimulationTable(params) {
+      // Updated buildSimulationTable: displaying Bet Increase as currentBet*(r_opt-1)
       let html = "<h3 style='margin-top:0;'>Loss Streak Simulation</h3>";
       html += "<table><tr>";
       html += "<th>Round #</th>";
       html += "<th>Bet Size</th>";
+      html += "<th>Bet Increase</th>";
       html += "<th>Cumulative Bet</th>";
       html += "<th>Bet+</th>";
       html += "<th>Payout on Win</th>";
@@ -285,38 +296,41 @@
       html += "<th>Balance+</th>";
       html += "</tr>";
       
-      // Round the initial bet for UI display (S0 already rounded to two decimals)
+      // Initial bet rounded to two decimals
       let S0 = Number(params.S.toFixed(2));
       
-      // Waiting rounds (N rounds): round all numeric UI values
+      // Waiting rounds (N rounds)
       for (let i = 1; i <= params.N; i++) {
         html += "<tr>";
         html += "<td>" + i + " (Wait)</td>";
         html += "<td>" + (0).toFixed(2) + "</td>";
+        html += "<td>N/A</td>";
         html += "<td>" + (0).toFixed(2) + "</td>";
-        // For waiting rounds, if lost, the next bet would be S0:
-        html += "<td>" + S0.toFixed(2) + "</td>";
+        html += "<td>N/A</td>";
         html += "<td>N/A</td>";
         html += "<td>" + params.B.toFixed(2) + "</td>";
         html += "<td>" + (params.B - S0).toFixed(2) + "</td>";
         html += "</tr>";
       }
       
-      // Actual betting rounds (L rounds): round UI values to 2 decimals
+      // Betting rounds (L rounds)
       let cumulative = 0;
       for (let j = 1; j <= params.L; j++) {
-        // Compute current bet using S0
         let currentBet = S0 * Math.pow(params.r_opt, j - 1);
-        cumulative = cumulative + currentBet;
+        cumulative += currentBet;
         let nextBet = S0 * Math.pow(params.r_opt, j);
         let betPlus = cumulative + nextBet;
         let payout = nextBet;
         let balance = params.B - cumulative;
         let balancePlus = params.B - betPlus;
-
+        
+        // Calculate bet increase as (currentBet * (r_opt - 1))
+        let betIncrease = currentBet * (params.r_opt - 1);
+        
         html += "<tr>";
         html += "<td>" + (params.N + j) + "</td>";
         html += "<td>" + currentBet.toFixed(2) + "</td>";
+        html += "<td>" + betIncrease.toFixed(2) + "</td>";
         html += "<td>" + cumulative.toFixed(2) + "</td>";
         html += "<td>" + betPlus.toFixed(2) + "</td>";
         html += "<td>" + payout.toFixed(2) + "</td>";
